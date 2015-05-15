@@ -8,6 +8,7 @@ import sys
 import tempfile
 import shutil
 import logging
+from itertools import chain
 
 from logging import getLogger, StreamHandler
 
@@ -121,19 +122,29 @@ class Terrarium(object):
         self._digest = m.hexdigest()
         return self._digest
 
+    def _parse_requirements(self, reqfile):
+        reqfile = os.path.abspath(reqfile)
+        with open(reqfile, 'r') as f:
+            for req in f:
+                req = req.strip()
+                if not req or req.startswith('#'):
+                    continue
+                if req.startswith('-r'):
+                    new_reqfile = os.path.join(
+                        os.path.dirname(reqfile),
+                        req[2:].strip())
+                    for subreq in self._parse_requirements(new_reqfile):
+                        yield subreq
+                else:
+                    yield req
+
     @property
     def requirements(self):
         if self._requirements is not None:
             return self._requirements
-        lines = []
-        for arg in self.args.reqs:
-            if os.path.exists(arg):
-                with open(arg, 'r') as f:
-                    for line in f.readlines():
-                        line = line.strip()
-                        if line and not line.startswith('#'):
-                            lines.append(line)
-        self._requirements = sorted(lines)
+        self._requirements = sorted(set(
+            chain(*[self._parse_requirements(reqfile)
+                    for reqfile in self.args.reqs])))
         return self._requirements
 
     def restore_previously_backed_up_environment(self):
